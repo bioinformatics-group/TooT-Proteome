@@ -74,39 +74,99 @@ if not os.access(TooTPWork, os.W_OK):
     sys.exit("TooT-P work directory specifies a directory without permission to write: " + os.path.abspath(TooTPWork))
 
 
-# Run TooT-T on target query, with output going to <work>/TooT-Proteome/<query-filename>/
-TooTTCommand = args.TooTT + " -query=" + args.query + " -db=" + args.db + " -out=" + args.out + " -work=" + args.work
-print("Executing: " + TooTTCommand) 
-TooTTOut = subprocess.run([args.TooTT, "-query=" + args.query, "-db=" + args.db, "-out=" + TooTPWork, "-work=" + args.work])
-print(TooTTOut.returncode)
-## If exit code is bad, exit
-if TooTTOut.returncode != 0:
-    sys.exit("TooT-T script returned non-zero exit! Aborting TooT-Proteome.")
+#Create a TooT-P output file:
+TooTSCOutheaders = ["", "UniProtID", "pred", "1",  "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]
+TooTSCOutFile = os.path.join(args.out, "TooTSCOut.csv")
+with open(TooTSCOutFile, 'w') as f:
+    writer = csv.writer(f)
+    writer.writerow(TooTSCOutheaders)
 
 
-# Filter initial query into intermediate fasta file (TooTTout.fasta in work dir) in <work>/TooT-P/TooTTout.fasta
-MembraneFasta = os.path.join(TooTPWork, "TooTTout.fasta")
-# Get rid of any old version
-if os.path.exists(MembraneFasta):
-    os.remove(MembraneFasta)
+SCClasses = ["Nonselective", "water", "inorganic cation", "inorganic anion", "organic anion", 
+    "organooxogyn", "amino acid and derivatives", "other Organonitrogen compound", "nucleotide", 
+    "Organic heterocyclic", "Miscellaneous"]
+SCClassDict = {}
 
-MembraneProts = []
 
-with open(os.path.join(TooTPWork, "TooTTout.csv")) as csvFile:
-     csvReader = csv.reader(csvFile, delimiter=',')
-     for row in csvReader:
-         if row[2] == "1":
-             MembraneProts.append(row[1])
+#Clean stuff up if it already exists:
+if os.path.exists(os.path.join(TooTPWork, "TooT-TProblemSeq.txt")):
+    os.remove(os.path.join(TooTPWork, "TooT-TProblemSeq.txt"))
+
+#Let's look at looping around the query to identify problem sequences instead of letting
 for record in SeqIO.parse(args.query, "fasta"):
-    if record.id in MembraneProts:
-        with open(MembraneFasta, "a") as output_handle:
-            SeqIO.write(record, output_handle, "fasta")
+    seqDir = os.path.join(TooTPWork, record.id)
+    if os.path.exists(seqDir):
+        shutil.rmtree(seqDir)
+    Path(seqDir).mkdir(parents=True, exist_ok=True)
+    seqFile = os.path.join(seqDir, record.id + ".fasta")
+    with open(seqFile, "a") as f:
+        SeqIO.write(record, f, "fasta")
 
-if not os.path.exists(MembraneFasta):
-    print("No membrane proteins were detected in: " + args.query)
-    sys.exit(0)
+    TooTTCommandArgs = [args.TooTT, "-query=" + seqFile, "-db=" + args.db, "-out=" + seqDir, "-work=" + args.work]
+    print("Executing: " + ' '.join(TooTTCommandArgs))
+    TootOutStdout = open(os.path.join(seqDir, "log.stdout"), "w")
+    TootOutStderr = open(os.path.join(seqDir, "log.stderr"), "w")
+    TooTTOut = subprocess.run(TooTTCommandArgs, stdout=TootOutStdout, stderr=TootOutStderr)
+    TootOutStdout.close();
+    TootOutStderr.close();
+    if TooTTOut.returncode != 0:
+        with open(os.path.join(TooTPWork, "TooT-TProblemSeq.txt"), "a") as f:
+            print("\tProblem with sequence: " + record.id)
+            f.write(record.id + "\n")
+        continue
+    else:
+        os.remove(os.path.join(seqDir, "log.stdout"))
+        os.remove(os.path.join(seqDir, "log.stderr"))
 
-# Run TooT-SC on the filtered query with output going to <work>/TooT-Proteome/<query-filename>/
-TooTSCOut = subprocess.run([args.TooTSC, "-query=" + MembraneFasta, "-db=" + args.db, "-out=" + args.out, "-work=" + args.work])
-## If exit code is bad, exit
-# Copy output to <out>
+    #Check to make sure this was a transporter, continuing if it was not.
+    with open(os.path.join(seqDir, "TooTTout.csv")) as csvFile:
+        csvReader = csv.reader(csvFile, delimiter=',')
+        next(csvReader)
+        row = next(csvReader)
+        seqID = row[1]
+        #Clean out TooT-T because it's a hog and if things worked we don't care
+        shutil.rmtree(os.path.join(args.work, "work", "TooT-T", seqID))
+        if row[2] == "0":
+            continue
+
+
+
+    TootOutStdout = open(os.path.join(seqDir, "log.stdout"), "w")
+    TootOutStderr = open(os.path.join(seqDir, "log.stderr"), "w")
+    TooTSCCommandArgs = [args.TooTSC, "-query=" + seqFile, "-db=" + args.db, "-out=" + seqDir, "-work=" + args.work]
+    print("Executing: " + ' '.join(TooTSCCommandArgs))
+    TooTSCOut = subprocess.run(TooTSCCommandArgs, stdout=TootOutStdout, stderr=TootOutStderr)
+    TootOutStdout.close();
+    TootOutStderr.close();
+    if TooTSCOut.returncode != 0:
+        with open(os.path.join(TooTPWork, "TooT-SCProblemSeq.txt"), "a") as f:
+            print("\tProblem with sequence: " + record.id)
+            f.write(record.id + "\n")
+        continue
+    else:
+        os.remove(os.path.join(seqDir, "log.stdout"))
+        os.remove(os.path.join(seqDir, "log.stderr"))
+
+    #Merge the results into the TooTSCOutFile
+    with open(TooTSCOutFile, 'a') as f:
+        writer = csv.writer(f)
+        with open(os.path.join(seqDir, "TooTSCout.csv")) as csvFile:
+            csvReader = csv.reader(csvFile, delimiter=',')
+            next(csvReader)
+            row = next(csvReader)
+            seqID = row[1]
+            #Clean out TooT-SC for consistency, though these seem like smaller files
+            shutil.rmtree(os.path.join(args.work, "work", "TooT-SC", seqID))
+            SCClassDict[row[2]] = SCClassDict.get(row[2], 0) + 1
+            writer.writerow(row)
+
+
+with open("TestOut.csv", 'w') as f:
+    writer = csv.writer(f)
+    writer.writerow(["Class", "Occurrence"])
+    totalClasses = 0;
+    for i in range(0, 11):
+        writer.writerow([SCClasses[i], SCClassDict.get(SCClasses[i], 0)])
+        totalClasses = totalClasses + SCClassDict.get(SCClasses[i], 0)
+    writer.writerow(["total", totalClasses])
+
