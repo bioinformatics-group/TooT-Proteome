@@ -11,8 +11,8 @@ import subprocess
 import traceback
 import logging
 
-TooTTScript = "TooT_TTool.R";
-TooTSCScript = "TooT_SCTool.R";
+TooTTScript = "TooT-T.R";
+TooTSCScript = "TooT-SC.R";
 
 parser = argparse.ArgumentParser(description="A tool to classify transporter proteins. It will filter a fasta-formatted file through TooT-T before sending it through TooT-SC and collating the results.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("-query", help="a fasta formatted file", required=True)
