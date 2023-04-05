@@ -1,6 +1,17 @@
 # Toot-Proteome
 A tool to combine Toot-T and Toot-SC to more quickly classify transporter proteins
 
+Chat GPT gave me a nice summary:
+ * It accepts command-line arguments using the argparse module.
+ * It validates the existence and permissions of directories and scripts specified by the user.
+ * It reads in a fasta file of protein sequences.
+ * It runs the TooT-T script on each sequence to predict whether it's a transporter or not, and saves the output in a directory.
+ * It checks whether the TooT-T script ran successfully for each sequence and skips over problem sequences.
+ * For sequences that are predicted as transporters by TooT-T, it runs the TooT-SC script to classify them by substrate, and saves the output in a directory.
+ * It merges the output from all sequences into a single CSV file containing predicted substrate labels.
+ * It provides some basic statistics on the predicted substrate labels.
+
+
 
 ## HOW TO USE
  - This tool requires that `TOOT-T` and `TOOT-SC` be pre-installed
